@@ -40,7 +40,7 @@ st.markdown("""
  
 st.title("Ohmium Stack Health Dashboard")
 
-st.markdown("Monitor and analyze physical parameters alongside health scores for root cause diagnostics.")
+st.markdown("Monitor and analyze physical parameters alongside health score.")
  
 # 2. Sidebar Data Ingestion
 
