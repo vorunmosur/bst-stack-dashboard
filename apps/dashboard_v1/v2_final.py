@@ -1,16 +1,18 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # 1. Page Configuration & Branded Styling
-# Official direct link to Ohmium logo
-LOGO_URL = r"C:\Users\VorunMosur\Downloads\ohmiumlogo.png"
+# FIXED: We find the logo inside the same folder as this script
+current_dir = os.path.dirname(__file__)
+logo_path = os.path.join(current_dir, "ohmiumlogo.png")
 
 st.set_page_config(
-    page_title="Ohmium Stack Performance Dashboard", 
-    page_icon=LOGO_URL, 
+    page_title="Ohmium Stack Performance Dashboard",
+    page_icon=logo_path,
     layout="wide"
 )
 
@@ -27,7 +29,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # Branding: Sidebar Logo
-st.logo(LOGO_URL, icon_image=LOGO_URL)
+# FIXED: Uses the dynamic logo_path
+st.logo(logo_path, icon_image=logo_path)
 
 # 2. Universal Data Processing Engine (BST & MTS Support)
 @st.cache_data
@@ -84,6 +87,7 @@ with st.sidebar:
         st.info(f"Analyzing {sys_mode} dataset")
 
 if not uploaded_files:
+    # FIXED: Re-added the logo image in the placeholder
     st.markdown(f'<div class="title-container"><h1>Ohmium Stack Performance Dashboard</h1></div>', unsafe_allow_html=True)
     st.info("👈 Please upload stack files to begin analysis.")
     st.stop()
@@ -123,7 +127,6 @@ with tab1:
     sel_time_c = st.select_slider("Select Inspection Timestamp", options=time_strs_c, key="cell_slider")
     row_c = df_c[df_c['Time'].dt.strftime('%H:%M:%S') == sel_time_c].iloc[0]
 
-    # Manager's 1.7V Reference
     IDEAL_REF = 1.7
     deviations = row_c[c_cols_c] - IDEAL_REF
     fig_dev = go.Figure()
@@ -197,4 +200,5 @@ with tab3:
         fig_dual.update_yaxes(title_text=f"<b>{p1}</b>", secondary_y=False)
         if p2 != "None": fig_dual.update_yaxes(title_text=f"<b>{p2}</b> (Dashed)", secondary_y=True)
         st.plotly_chart(fig_dual, use_container_width=True)
-        
+
+
