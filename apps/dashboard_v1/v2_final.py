@@ -6,13 +6,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # 1. Page Configuration & Branded Styling
-# FIXED: We find the logo inside the same folder as this script
 current_dir = os.path.dirname(__file__)
 logo_path = os.path.join(current_dir, "ohmiumlogo.png")
 
 st.set_page_config(
     page_title="Ohmium Stack Performance Dashboard",
-    page_icon=logo_path,
+    page_icon="⚡", # Using emoji as fallback icon for stability
     layout="wide"
 )
 
@@ -24,13 +23,16 @@ st.markdown("""
     .status-panel { padding: 20px; border-radius: 10px; margin: 10px 0; border-left: 8px solid; font-size: 1.1em; line-height: 1.5; }
     .grid-card-text { text-align: center; font-weight: bold; margin-top: -10px; margin-bottom: 20px; }
     .title-container { display: flex; align-items: center; gap: 20px; padding-bottom: 20px; }
-    .title-container img { height: 60px; }
     </style>
     """, unsafe_allow_html=True)
 
 # Branding: Sidebar Logo
-# FIXED: Uses the dynamic logo_path
-st.logo(logo_path, icon_image=logo_path)
+# We use st.sidebar.image because st.logo is currently throwing an API error
+with st.sidebar:
+    if os.path.exists(logo_path):
+        st.image(logo_path, use_container_width=True)
+    else:
+        st.write("⚡ **Ohmium Fleet Monitor**")
 
 # 2. Universal Data Processing Engine (BST & MTS Support)
 @st.cache_data
@@ -74,7 +76,7 @@ def load_and_process(file, mode):
     df["health_score"] = (100 - (df["p_v"]*40 + df["p_s"]*30 + df["p_f"]*20 + df["p_c"]*10)).clip(0, 100)
     return df, cell_cols
 
-# 3. Sidebar
+# 3. Sidebar Setup
 with st.sidebar:
     st.header("1. Data Ingestion")
     sys_mode = st.radio("System Type", ["BST", "MTS"])
@@ -84,10 +86,8 @@ with st.sidebar:
         st.divider()
         st.header("📊 Fleet Summary")
         st.metric("Total Stacks", len(uploaded_files))
-        st.info(f"Analyzing {sys_mode} dataset")
 
 if not uploaded_files:
-    # FIXED: Re-added the logo image in the placeholder
     st.markdown(f'<div class="title-container"><h1>Ohmium Stack Performance Dashboard</h1></div>', unsafe_allow_html=True)
     st.info("👈 Please upload stack files to begin analysis.")
     st.stop()
@@ -120,19 +120,19 @@ with tab1:
             st.markdown(f'<div class="grid-card-text">Gap to Ideal: {100-avg_h:.1f} pts</div>', unsafe_allow_html=True)
 
     st.divider()
-    st.subheader("Individual Cell Voltage Deviation (Reference: 1.7V)")
-    target_c = st.selectbox("Select Stack for Cell Analysis", list(all_data.keys()), key="cell_target")
+    st.subheader("Individual Cell Voltage Analysis (Reference: 1.7V)")
+    target_c = st.selectbox("Select Stack for Cell View", list(all_data.keys()), key="cell_target")
     df_c = all_data[target_c]; c_cols_c = all_cell_cols[target_c]
     time_strs_c = df_c['Time'].dt.strftime('%H:%M:%S').tolist()
     sel_time_c = st.select_slider("Select Inspection Timestamp", options=time_strs_c, key="cell_slider")
     row_c = df_c[df_c['Time'].dt.strftime('%H:%M:%S') == sel_time_c].iloc[0]
 
     IDEAL_REF = 1.7
-    deviations = row_c[c_cols_c] - IDEAL_REF
-    fig_dev = go.Figure()
-    fig_dev.add_trace(go.Bar(x=c_cols_c, y=deviations, marker_color=['#c62828' if x > 0 else '#1565c0' for x in deviations]))
-    fig_dev.update_layout(title=f"Cell Voltage Deviation from 1.7V Benchmark at {sel_time_c}", yaxis_title="Deviation (V)", height=350)
-    st.plotly_chart(fig_dev, use_container_width=True)
+    fig_cells = go.Figure()
+    fig_cells.add_trace(go.Bar(x=c_cols_c, y=row_c[c_cols_c], name="Actual Voltage", marker_color='#1565c0'))
+    fig_cells.add_hline(y=IDEAL_REF, line_dash="dash", line_color="red", annotation_text="Ideal (1.7V)")
+    fig_cells.update_layout(title=f"Cell Voltage Distribution at {sel_time_c}", yaxis_title="Voltage (V)", height=350)
+    st.plotly_chart(fig_cells, use_container_width=True)
 
 # --- TAB 2: DEEP-DIVE DIAGNOSTICS ---
 with tab2:
@@ -141,30 +141,28 @@ with tab2:
     st.table(rank_df.sort_values("Avg Health", ascending=False))
 
     st.subheader("Comparative Health Trends")
-    sel_diag_stacks = st.multiselect("Compare Multiple Stacks (Health Score)", list(all_data.keys()), default=list(all_data.keys()), key="multi_health")
+    sel_diag_stacks = st.multiselect("Compare Multiple Stacks", list(all_data.keys()), default=list(all_data.keys()), key="multi_health")
     
     fig_ht = go.Figure()
     for z, color, yr in [("RED", "red", [0,60]), ("AMBER", "orange", [60,80]), ("GREEN", "green", [80,100])]:
         fig_ht.add_hrect(y0=yr[0], y1=yr[1], fillcolor=color, opacity=0.05, line_width=0, annotation_text=z)
     for n in sel_diag_stacks:
         fig_ht.add_trace(go.Scatter(x=all_data[n]['Time'], y=all_data[n]['health_score'], name=n))
-    fig_ht.update_layout(height=400, yaxis_range=[0,105], hovermode="x unified", title="Health Score Comparison Over Time")
+    fig_ht.update_layout(height=400, yaxis_range=[0,105], hovermode="x unified")
     st.plotly_chart(fig_ht, use_container_width=True)
 
     st.divider()
-    target_d = st.selectbox("Select Stack for Alert Log & Root Cause Inspection", list(all_data.keys()), key="diag_target")
+    target_d = st.selectbox("Select Stack for Detailed Root Cause", list(all_data.keys()), key="diag_target")
     df_d = all_data[target_d]
 
-    # Sustained Red Alert Log
     st.subheader(f"🚨 Sustained Red Alert Log: {target_d}")
     df_d["is_red"] = (df_d["health_score"] < 60).astype(int)
     df_d["grp"] = (df_d["is_red"] != df_d["is_red"].shift()).cumsum()
     red_eps = df_d[df_d["is_red"] == 1].groupby("grp").agg(Start=("Time", "min"), End=("Time", "max"), Count=("Time", "count"))
     sustained = red_eps[red_eps["Count"] >= 10]
-    if not sustained.empty: st.warning("Sustained critical alerts detected:"); st.table(sustained.reset_index(drop=True))
+    if not sustained.empty: st.warning("Sustained alerts detected:"); st.table(sustained.reset_index(drop=True))
     else: st.success("No sustained critical alerts.")
 
-    st.subheader(f"Root Cause Inspection: {target_d}")
     time_strs_d = df_d['Time'].dt.strftime('%H:%M:%S').tolist()
     sel_time_d = st.select_slider("Pick Timestamp (Root Cause)", options=time_strs_d, key="rc_slider")
     row_d = df_d[df_d['Time'].dt.strftime('%H:%M:%S') == sel_time_d].iloc[0]
@@ -174,20 +172,20 @@ with tab2:
     brd = "#2e7d32" if zone == "GREEN" else "#ef6c00" if zone == "AMBER" else "#c62828"
     p_map = {"Voltage": row_d["p_v"]*40, "Spread": row_d["p_s"]*30, "Flow": row_d["p_f"]*20, "Cond": row_d["p_c"]*10}
     active = sorted({k: v for k, v in p_map.items() if v > 0}.items(), key=lambda x: x[1], reverse=True)
-    summary = f"Health drop primarily driven by <b>{active[0][0]}</b>." if active else "Stack operating at baseline."
+    summary = f"Health drop driven by <b>{active[0][0]}</b>." if active else "Stack at baseline."
     st.markdown(f'<div class="status-panel" style="background-color: {bg}; border-left-color: {brd};"><b>{sel_time_d} | Health: {row_d["health_score"]:.1f}</b><br>Diagnosis: {summary}</div>', unsafe_allow_html=True)
     
     csv = pd.DataFrame.from_dict(p_map, orient='index', columns=['Points Subtracted']).to_csv().encode('utf-8')
-    st.download_button("Download Report (CSV)", data=csv, file_name=f"diag_{target_d}.csv", mime='text/csv')
+    st.download_button("Download Report", data=csv, file_name=f"diag_{target_d}.csv", mime='text/csv')
 
 # --- TAB 3: COMPARATIVE TRENDS ---
 with tab3:
-    st.subheader("Dual-Parameter Comparative Relationship Plot")
+    st.subheader("Dual-Parameter Comparative Plot")
     all_p = ["None"] + sorted(list(set().union(*(d.columns for d in all_data.values()))))
     c1, c2 = st.columns(2)
-    p1 = c1.selectbox("Left Axis Parameter", [p for p in all_p if p != "None"], index=all_p.index("avg_cell_voltage") if "avg_cell_voltage" in all_p else 0)
-    p2 = c2.selectbox("Right Axis Parameter", all_p, index=0)
-    comp_list = st.multiselect("Stacks to Plot Relationships:", list(all_data.keys()), default=list(all_data.keys())[:1], key="trend_stacks")
+    p1 = c1.selectbox("Left Axis", [p for p in all_p if p != "None"], index=all_p.index("avg_cell_voltage") if "avg_cell_voltage" in all_p else 0)
+    p2 = c2.selectbox("Right Axis", all_p, index=0)
+    comp_list = st.multiselect("Stacks to Plot:", list(all_data.keys()), default=list(all_data.keys())[:1], key="trend_stacks")
     
     if comp_list:
         fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
@@ -197,7 +195,7 @@ with tab3:
             if p2 != "None" and p2 in all_data[n].columns:
                 fig_dual.add_trace(go.Scatter(x=all_data[n]['Time'], y=all_data[n][p2], name=f"{n}: {p2}", line=dict(dash='dot')), secondary_y=True)
         fig_dual.update_layout(height=600, hovermode="x unified")
-        fig_dual.update_yaxes(title_text=f"<b>{p1}</b>", secondary_y=False)
+        fig_dual.update_yaxes(title_text=p1, secondary_y=False)
         if p2 != "None": fig_dual.update_yaxes(title_text=f"<b>{p2}</b> (Dashed)", secondary_y=True)
         st.plotly_chart(fig_dual, use_container_width=True)
 
